@@ -580,6 +580,13 @@ MonoBehaviour:
   rows: 10
   columns: 10
   cellSize: 2.56
+  baseColors:
+  - Blue
+  - Green
+  - Yellow
+  - Red
+  - Pink
+  - Purple
   blockPrefab: {fileID: 543993973}
   blockSprites:
   - {fileID: 21300000, guid: 6a68baf138a39414ebfd173bc6650e61, type: 3}

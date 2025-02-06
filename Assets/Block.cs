@@ -31,20 +31,20 @@ public class Block : MonoBehaviour
 
     private void OnMouseDown()
     {
-        StartCoroutine(ClickEffect()); // Add animation effect
-
-        BoardManager boardManager = FindObjectOfType<BoardManager>();
-        if (boardManager != null)
+        StartCoroutine(ClickEffect());
+        if (BoardManager.Instance != null)
         {
-            boardManager.HandleBlockClick(this);
+            BoardManager.Instance.HandleBlockClick(this);
         }
     }
+
+
 
     private IEnumerator ClickEffect()
     {
         Vector3 originalScale = transform.localScale;
-        Vector3 targetScale = originalScale * 1.2f; // Slightly larger size when clicked
-        float duration = 0.1f; // Animation speed
+        Vector3 targetScale = originalScale * 1.2f;
+        float duration = 0.1f;
         float elapsedTime = 0f;
 
         while (elapsedTime < duration)
@@ -61,9 +61,7 @@ public class Block : MonoBehaviour
             transform.localScale = Vector3.Lerp(targetScale, originalScale, elapsedTime / duration);
             yield return null;
         }
-
-        transform.localScale = originalScale; // Ensure final reset
+        transform.localScale = originalScale;
     }
-
 
 }

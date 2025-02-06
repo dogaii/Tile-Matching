@@ -17,6 +17,7 @@ public class BoardManager : MonoBehaviour
     public float cellSize = 2.56f; // Add this to the top of BoardManager.cs
     private CameraManager cameraScript;
 
+    public List<string> baseColors = new List<string> { "Blue", "Green", "Red", "Yellow", "Pink", "Purple" };
 
     public GameObject blockPrefab;
 
@@ -60,6 +61,19 @@ public class BoardManager : MonoBehaviour
     public Sprite purpleLargeIcon;
 
     // Similarly, add variables for medium and large icons.
+    public static BoardManager Instance { get; private set; }
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+        }
+        else
+        {
+            Instance = this;
+        }
+    }
 
     private void Start()
     {
@@ -125,27 +139,30 @@ public class BoardManager : MonoBehaviour
         { "Purple", purpleLargeIcon }
     };
     }
+    // In BoardManager.cs, add:
 
+    // Then modify CreateBlock like this:
     private void CreateBlock(int row, int column)
     {
-        // Instantiate the block
+        // Instantiate the block.
         GameObject blockObj = Instantiate(blockPrefab, transform);
-
-        // Set the block's position using cached cellSize
         blockObj.transform.localPosition = new Vector3(column * cellSize, -row * cellSize, 0);
 
-        // Assign a random color and sprite
-        int randomIndex = Random.Range(0, blockSprites.Count);
-        Sprite randomSprite = blockSprites[randomIndex];
-        string randomColor = blockSprites[randomIndex].name;
+        // Pick a random color index.
+        int randomIndex = Random.Range(0, baseColors.Count);
+        string baseColor = baseColors[randomIndex];
 
-        // Get the Block component and set properties
+        // Instead of picking a sprite from blockSprites and using its name,
+        // pick the default icon for that color.
+        Sprite defaultSprite = defaultIcons[baseColor];
+
+        // Get the Block component and set properties.
         Block block = blockObj.GetComponent<Block>();
-        block.SetBlock(randomColor, randomSprite, new Vector2Int(row, column));
+        block.SetBlock(baseColor, defaultSprite, new Vector2Int(row, column));
 
-        // Store in the grid
         grid[row, column] = block;
     }
+
 
     private void GenerateBoard()
     {
@@ -167,6 +184,8 @@ public class BoardManager : MonoBehaviour
                 CreateBlock(i, j); // Use helper function
             }
         }
+        UpdateAllGroupIcons();
+
     }
 
 
@@ -177,20 +196,45 @@ public class BoardManager : MonoBehaviour
 
         if (matchedBlocks.Count >= 2)
         {
-            RemoveBlocks(matchedBlocks);
+            StartCoroutine(RemoveRefillAndShuffle(matchedBlocks));
         }
         else
         {
             Debug.Log("No match found.");
         }
+    }
+    private IEnumerator RemoveRefillAndShuffle(List<Block> matchedBlocks)
+    {
+        // Update the icons for visual feedback before removal.
+        UpdateGroupIcons(matchedBlocks);
 
-        // After handling a click, check for deadlock
+        // [Optional pause for animation/feedback]
+        yield return new WaitForSeconds(0.2f);
+
+        // Remove all matched blocks.
+        foreach (Block block in matchedBlocks)
+        {
+            if (block != null)
+            {
+                grid[block.gridPosition.x, block.gridPosition.y] = null;
+                Destroy(block.gameObject);
+            }
+        }
+
+        yield return null; // ensure blocks are destroyed
+
+        // Refill the board.
+        yield return StartCoroutine(RefillBoard());
+
+        // Check for deadlock, etc.
         if (IsBoardInDeadlock())
         {
             Debug.Log("Deadlock detected! Shuffling...");
-            SmartShuffleBoardWithDelay();
+            yield return StartCoroutine(SmartShuffleBoardWithDelay());
         }
     }
+
+
 
     private List<Block> GetConnectedBlocks(Block startBlock)
     {
@@ -231,46 +275,50 @@ public class BoardManager : MonoBehaviour
     }
 
 
-    private void RemoveBlocks(List<Block> matchedBlocks)
-    {
-        foreach (Block block in matchedBlocks)
-        {
-            if (block == null) continue; // Skip null references
-            grid[block.gridPosition.x, block.gridPosition.y] = null; // Clear grid position
-            Destroy(block.gameObject); // Destroy block
-        }
 
-        // Trigger block refill from the top
-        StartCoroutine(RefillBoard());
-    }
 
     private IEnumerator RefillBoard()
     {
+        // Start refill routines for all columns concurrently.
         for (int column = 0; column < columns; column++)
         {
-            yield return StartCoroutine(RefillColumn(column)); // Refill each column
+            StartCoroutine(RefillColumn(column));
         }
+        // Wait long enough for all columns to finish their animations.
+        yield return new WaitForSeconds(0.6f);
+        UpdateAllGroupIcons();
 
-        yield return new WaitForSeconds(0.5f); // Allow blocks to settle before next step
     }
 
-
-
-
-
-    // Helper function to determine the correct icon based on group size
     private Sprite GetIconForGroupSize(string color, int groupSize)
     {
-        if (!defaultIcons.ContainsKey(color)) return null;
+        // Ensure the base color exists.
+        if (!defaultIcons.ContainsKey(color))
+            return null;
 
-        return groupSize switch
+        // Apply the rules:
+        if (groupSize <= 4)
         {
-            > 9 => largeIcons[color],
-            > 7 => mediumIcons[color],
-            > 4 => smallIcons[color],
-            _ => defaultIcons[color]
-        };
+            return defaultIcons[color];
+        }
+        else if (groupSize <= 7) // 5-7
+        {
+            return smallIcons[color];  // first icon
+        }
+        else if (groupSize <= 9) // 8-9
+        {
+            return mediumIcons[color]; // second icon
+        }
+        else // groupSize >= 10
+        {
+            return largeIcons[color];  // third icon
+        }
     }
+
+
+
+
+
 
     private IEnumerator RefillColumn(int column)
     {
@@ -305,24 +353,74 @@ public class BoardManager : MonoBehaviour
         yield return null; // Allow frame update
     }
 
+    private void UpdateGroupIcons(List<Block> group)
+    {
+        if (group.Count < 2)
+            return; // Do nothing if not a valid group
+
+        // Use the base color of the first block (all blocks have the same base color).
+        string baseColor = group[0].blockColor;
+        Sprite newIcon = GetIconForGroupSize(baseColor, group.Count);
+
+        foreach (Block block in group)
+        {
+            block.spriteRenderer.sprite = newIcon;
+        }
+    }
+    private void UpdateAllGroupIcons()
+    {
+        bool[,] visited = new bool[rows, columns];
+
+        // Loop over every cell in the grid.
+        for (int i = 0; i < rows; i++)
+        {
+            for (int j = 0; j < columns; j++)
+            {
+                // Skip if already visited or if there's no block.
+                if (visited[i, j] || grid[i, j] == null)
+                    continue;
+
+                // Get the connected group starting from this block.
+                List<Block> group = new List<Block>();
+                FloodFill(i, j, grid[i, j].blockColor, group, visited);
+
+                // Update the icons for the group if it meets the criteria.
+                // (Groups of 1-4 should remain default, so only update if 5 or more.)
+                if (group.Count >= 5)
+                {
+                    UpdateGroupIcons(group);
+                }
+            }
+        }
+    }
 
     private void CreateNewBlock(int row, int column)
     {
+        // Instantiate a new block.
         GameObject blockObj = Instantiate(blockPrefab, transform);
-        Vector3 spawnPosition = new Vector3(column * cellSize, (rows + 2) * cellSize, 0); // Spawn outside the board
+        // Set its spawn position (off the top of the board).
+        Vector3 spawnPosition = new Vector3(column * cellSize, (rows + 2) * cellSize, 0);
         blockObj.transform.localPosition = spawnPosition;
 
+        // Get the Block component.
         Block newBlock = blockObj.GetComponent<Block>();
-        int randomIndex = Random.Range(0, blockSprites.Count);
-        Sprite randomSprite = blockSprites[randomIndex];
-        string randomColor = blockSprites[randomIndex].name;
 
-        newBlock.SetBlock(randomColor, randomSprite, new Vector2Int(row, column));
+        // Pick a random color index from baseColors.
+        int randomIndex = Random.Range(0, baseColors.Count);
+        string baseColor = baseColors[randomIndex];
+
+        // Use the default icon for the chosen base color.
+        Sprite defaultSprite = defaultIcons[baseColor];
+
+        // Set the block with the base color, default icon, and its grid position.
+        newBlock.SetBlock(baseColor, defaultSprite, new Vector2Int(row, column));
         grid[row, column] = newBlock;
 
+        // Animate the block falling into its position.
         Vector3 targetPosition = new Vector3(column * cellSize, -row * cellSize, 0);
-        StartCoroutine(MoveBlock(newBlock, targetPosition)); // Animate falling
+        StartCoroutine(MoveBlock(newBlock, targetPosition));
     }
+
 
     private IEnumerator MoveBlock(Block block, Vector3 targetPosition)
     {
